@@ -1,0 +1,306 @@
+#!/bin/bash
+
+  scriptpath="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
+  # check if jumble.conf exists
+  conf=$scriptpath/jumble.conf
+  if [[ -f $conf ]]; then
+    source $conf
+  else
+    echo ""
+    echo "jumble.conf file is missing."
+    echo ""
+    exit
+  fi
+
+  # check if jumble should connect to komodo with cli or rpc
+  if [[ -z $rpcAddress ]] || [[ -z $rpcPort ]] || [[ -z $rpcUser ]] || [[ -z $rpcPassword ]]; then
+      connection="cli"
+      echo ""
+      echo "Jumble is connecting to komodo using CLI."
+  else
+      connection="rpc"
+      echo ""
+      echo "Jumble is connecting to komodo using RPC."
+  fi
+
+  # addresses involved
+  # depositAddress
+  if [[ "$connection" == "rpc" ]]; then
+    depositAddress=$(curl -sS --data-binary '{"jsonrpc": "1.0", "id":"jumble", "method": "getnewaddress", "params": [] }' -H 'content-type: text/plain;' http://"$rpcUser":"$rpcPassword"@"$rpcAddress":"$rpcPort"/ | jq -r '.result')
+  elif [[ "$connection" == "cli" ]]; then
+    depositAddress=$($komodoCli $komodoCoin getnewaddress)
+  fi
+  # privateAddress1
+  if [[ "$connection" == "rpc" ]]; then
+    privateAddress1=$(curl -sS --data-binary '{"jsonrpc": "1.0", "id":"jumble", "method": "z_getnewaddress", "params": [] }' -H 'content-type: text/plain;' http://"$rpcUser":"$rpcPassword"@"$rpcAddress":"$rpcPort"/ | jq -r '.result')
+  elif [[ "$connection" == "cli" ]]; then
+    privateAddress1=$($komodoCli $komodoCoin z_getnewaddress)
+  fi
+  # privateAddress2
+  if [[ "$connection" == "rpc" ]]; then
+    privateAddress2=$(curl -sS --data-binary '{"jsonrpc": "1.0", "id":"jumble", "method": "z_getnewaddress", "params": [] }' -H 'content-type: text/plain;' http://"$rpcUser":"$rpcPassword"@"$rpcAddress":"$rpcPort"/ | jq -r '.result')
+  elif [[ "$connection" == "cli" ]]; then
+    privateAddress2=$($komodoCli $komodoCoin z_getnewaddress)
+  fi
+
+  nine="9.00000000"
+  ninetyThree="93.00000000"
+
+  # start of jumble process
+
+  echo ""
+  echo "..................................................."
+  echo "                     Jumble"
+  echo "..................................................."
+  echo ""
+
+  # ask for address to send jumbled coins to
+  echo "What address should we send your jumbled coins to?"
+  echo ""
+  read receiveAddress
+  echo ""
+
+  # repeat back
+  echo "Jumble will be sending your coins to $receiveAddress"
+  echo ""
+  echo "Are you sure? (yes/no)"
+  echo ""
+
+  # check user is sure about receiveAddress
+  read addressCheck
+  echo ""
+  if [ "$addressCheck" == "yes" ]; then
+    echo "Great, time to jumble."
+    echo ""
+    echo "..................................................."
+    echo ""
+  elif [ "$addressCheck" == "no" ]; then
+    echo "Stopping jumble."
+    echo ""
+    exit
+  else
+    echo "Only yes or no accepted."
+    echo ""
+    exit
+  fi
+
+  # explain jumble amounts
+  echo "Jumble will only send coins in amounts of 9 and 93."
+  echo ""
+  echo "Jumble will stay running, checking for any balance to jumble."
+  echo ""
+  echo "Deposit to: $depositAddress"
+  echo ""
+  echo "$explorer/address/$depositAddress"
+  echo ""
+  echo "..................................................."
+  echo ""
+
+# while true loop to keep jumble alive looking for any coins to jumble
+while true; do
+
+  # check balance of depositAddress before starting
+  if [[ "$connection" == "rpc" ]]; then
+    depositBalance=$(printf "%.8f" $(curl -sS --data-binary '{"jsonrpc": "1.0", "id":"jumble", "method": "z_getbalance", "params": ["'"$depositAddress"'"] }' -H 'content-type: text/plain;' http://"$rpcUser":"$rpcPassword"@"$rpcAddress":"$rpcPort"/ | jq -r '.result'))
+  elif [[ "$connection" == "cli" ]]; then
+    depositBalance=$($komodoCli $komodoCoin z_getbalance $depositAddress)
+  fi
+
+  # do balance compare for until script
+  depositBalanceCompare9=$(echo "$depositBalance>=$nine" | bc)
+
+  # run sending loop until depositBalance = 9
+  until [[ "$depositBalanceCompare9" == "0" ]]; do
+
+      # check balance of depositAddress before starting
+      if [[ "$connection" == "rpc" ]]; then
+        depositBalance=$(printf "%.8f" $(curl -sS --data-binary '{"jsonrpc": "1.0", "id":"jumble", "method": "z_getbalance", "params": ["'"$depositAddress"'"] }' -H 'content-type: text/plain;' http://"$rpcUser":"$rpcPassword"@"$rpcAddress":"$rpcPort"/ | jq -r '.result'))
+      elif [[ "$connection" == "cli" ]]; then
+        depositBalance=$($komodoCli $komodoCoin z_getbalance $depositAddress)
+      fi
+
+      # tell user balance in depositAddress
+      echo "$depositAddress balance: $depositBalance"
+      echo ""
+
+      sleep 1
+
+      # if balance is equal to or greater 93 set as 93, else set 9
+      depositBalanceCompare93=$(echo "$depositBalance>=$ninetyThree" | bc)
+      if [[ "$depositBalanceCompare93" == "0" ]]; then
+        #0 means false, in this case less than 93
+        sendAmount="9.00000000"
+      elif [[ "$depositBalanceCompare93" == "1" ]]; then
+        #1 means true, in this case more than 93
+        sendAmount="93.00000000"
+      fi
+
+      echo "Jumbling $sendAmount coins."
+      echo ""
+
+      sleep 1
+
+      # figure out transaction change amount to send back to depositAddress
+      change=$( printf "%.8f" $(bc -l <<< "($depositBalance-$sendAmount)") )
+
+      # send tx 1 -- t -> p
+      # from depositAddress to privateAddress1
+      # if change doesn't equal 0, create a change tx back to depositAddress
+      if [[ $change == "0.00000000" ]]; then
+        if [[ "$connection" == "rpc" ]]; then
+          sendtx1=$(curl -sS --data-binary '{"jsonrpc": "1.0", "id":"jumble", "method": "z_sendmany", "params": ["'"$depositAddress"'", [{"address": "'"$privateAddress1"'" ,"amount": '"$sendAmount"'}], 1, 0 ] }' -H 'content-type: text/plain;' http://"$rpcUser":"$rpcPassword"@"$rpcAddress":"$rpcPort"/ | jq -r ".result")
+        elif [[ "$connection" == "cli" ]]; then
+          sendtx1=$($komodoCli $komodoCoin z_sendmany $depositAddress '[{"address":"'''$privateAddress1'''","amount":'''$sendAmount'''}]' 1 0 )
+        fi
+      else
+        if [[ "$connection" == "rpc" ]]; then
+          sendtx1=$(curl -sS --data-binary '{"jsonrpc": "1.0", "id":"jumble", "method": "z_sendmany", "params": ["'"$depositAddress"'", [{"address": "'"$privateAddress1"'" ,"amount": '"$sendAmount"'},{"address": "'"$depositAddress"'" ,"amount": '"$change"'}], 1, 0 ] }' -H 'content-type: text/plain;' http://"$rpcUser":"$rpcPassword"@"$rpcAddress":"$rpcPort"/ | jq -r ".result")
+        elif [[ "$connection" == "cli" ]]; then
+          sendtx1=$($komodoCli $komodoCoin z_sendmany $depositAddress '[{"address":"'''$privateAddress1'''","amount":'''$sendAmount'''},{"address":"'''$depositAddress'''","amount":'''$change'''}]' 1 0 )
+        fi
+      fi
+
+      # tx1 txid
+      if [[ "$connection" == "rpc" ]]; then
+        txid1=$(curl -sS --data-binary '{"jsonrpc": "1.0", "id":"jumble", "method": "z_getoperationstatus", "params": [["'$sendtx1'"]] }' -H 'content-type: text/plain;' http://"$rpcUser":"$rpcPassword"@"$rpcAddress":"$rpcPort"/ | jq -r '.result' | jq -r '.[]' | jq -r '.result' | jq -r '.txid')
+      elif [[ "$connection" == "cli" ]]; then
+        txid1=$($komodoCli $komodoCoin z_getoperationstatus '["'"$sendtx1"'"]' | jq -r '.[]' | jq -r '.result' | jq -r '.txid')
+      fi
+
+      echo "Sending Jumble Payment 1 (t -> p)"
+      echo "opid: $sendtx1"
+      echo "txid: $txid1"
+      echo "$explorer/tx/$txid1"
+      echo ""
+
+      # check privateAddress1 balance to see when tx arrives
+      if [[ "$connection" == "rpc" ]]; then
+        privateBalance1=$(printf "%.8f" $(curl -sS --data-binary '{"jsonrpc": "1.0", "id":"jumble", "method": "z_getbalance", "params": ["'"$privateAddress1"'"] }' -H 'content-type: text/plain;' http://"$rpcUser":"$rpcPassword"@"$rpcAddress":"$rpcPort"/ | jq -r '.result'))
+      elif [[ "$connection" == "cli" ]]; then
+        privateBalance1=$($komodoCli $komodoCoin z_getbalance $privateAddress1)
+      fi
+
+      # pause jumble process until privateBalance1 equals sendAmount
+      until [ "$privateBalance1" = "$sendAmount" ]; do
+          sleep 60
+          echo "   checking for confirmations..."
+          # check privateAddress1 balance to see when tx arrives
+          if [[ "$connection" == "rpc" ]]; then
+            privateBalance1=$(printf "%.8f" $(curl -sS --data-binary '{"jsonrpc": "1.0", "id":"jumble", "method": "z_getbalance", "params": ["'"$privateAddress1"'"] }' -H 'content-type: text/plain;' http://"$rpcUser":"$rpcPassword"@"$rpcAddress":"$rpcPort"/ | jq -r '.result'))
+          elif [[ "$connection" == "cli" ]]; then
+            privateBalance1=$($komodoCli $komodoCoin z_getbalance $privateAddress1)
+          fi
+      done
+      echo ""
+      echo "   Transaction confirmed."
+
+      # quick sleep
+      sleep 3
+
+      # tx 2 -- p -> p
+      # from privateAddress1 to privateAddress2
+      if [[ "$connection" == "rpc" ]]; then
+        sendtx2=$(curl -sS --data-binary '{"jsonrpc": "1.0", "id":"jumble", "method": "z_sendmany", "params": ["'"$privateAddress1"'", [{"address": "'"$privateAddress2"'" ,"amount": '"$sendAmount"'}], 1, 0 ] }' -H 'content-type: text/plain;' http://"$rpcUser":"$rpcPassword"@"$rpcAddress":"$rpcPort"/ | jq -r ".result")
+      elif [[ "$connection" == "cli" ]]; then
+        sendtx2=$($komodoCli $komodoCoin z_sendmany $privateAddress1 '[{"address":"'''$privateAddress2'''","amount":'''$sendAmount'''}]' 1 0 )
+      fi
+
+      # tx2 txid
+      if [[ "$connection" == "rpc" ]]; then
+        txid2=$(curl -sS --data-binary '{"jsonrpc": "1.0", "id":"jumble", "method": "z_getoperationstatus", "params": [["'$sendtx2'"]] }' -H 'content-type: text/plain;' http://"$rpcUser":"$rpcPassword"@"$rpcAddress":"$rpcPort"/ | jq -r '.result' | jq -r '.[]' | jq -r '.result' | jq -r '.txid')
+      elif [[ "$connection" == "cli" ]]; then
+        txid2=$($komodoCli $komodoCoin z_getoperationstatus '["'"$sendtx2"'"]' | jq -r '.[]' | jq -r '.result' | jq -r '.txid')
+      fi
+
+      echo ""
+      echo "Sending Jumble Payment 2 (p -> p)"
+      echo "opid: $sendtx2"
+      echo "txid: $txid2"
+      echo "$explorer/tx/$txid2"
+      echo ""
+
+      # check privateAddress2 balance to see when tx arrives
+      if [[ "$connection" == "rpc" ]]; then
+        privateBalance2=$(printf "%.8f" $(curl -sS --data-binary '{"jsonrpc": "1.0", "id":"jumble", "method": "z_getbalance", "params": ["'"$privateAddress2"'"] }' -H 'content-type: text/plain;' http://"$rpcUser":"$rpcPassword"@"$rpcAddress":"$rpcPort"/ | jq -r '.result'))
+      elif [[ "$connection" == "cli" ]]; then
+        privateBalance2=$($komodoCli $komodoCoin z_getbalance $privateAddress2)
+      fi
+
+      # pause jumble process until privateBalance2 equals sendAmount
+      until [ "$privateBalance2" = "$sendAmount" ]; do
+          sleep 60
+          echo "   checking for confirmations..."
+          # check privateAddress2 balance to see when tx arrives
+          if [[ "$connection" == "rpc" ]]; then
+            privateBalance2=$(printf "%.8f" $(curl -sS --data-binary '{"jsonrpc": "1.0", "id":"jumble", "method": "z_getbalance", "params": ["'"$privateAddress2"'"] }' -H 'content-type: text/plain;' http://"$rpcUser":"$rpcPassword"@"$rpcAddress":"$rpcPort"/ | jq -r '.result'))
+          elif [[ "$connection" == "cli" ]]; then
+            privateBalance2=$($komodoCli $komodoCoin z_getbalance $privateAddress2)
+          fi
+      done
+      echo ""
+      echo "   Transaction confirmed."
+
+      # quick sleep
+      sleep 3
+
+      # tx 3 -- p -> t
+      # from privateAddress2 to receiveAddress
+      if [[ "$connection" == "rpc" ]]; then
+        sendtx3=$(curl -sS --data-binary '{"jsonrpc": "1.0", "id":"jumble", "method": "z_sendmany", "params": ["'"$privateAddress2"'", [{"address": "'"$receiveAddress"'" ,"amount": '"$sendAmount"'}], 1, 0 ] }' -H 'content-type: text/plain;' http://"$rpcUser":"$rpcPassword"@"$rpcAddress":"$rpcPort"/ | jq -r ".result")
+      elif [[ "$connection" == "cli" ]]; then
+        sendtx3=$($komodoCli $komodoCoin z_sendmany $privateAddress2 '[{"address":"'''$receiveAddress'''","amount":'''$sendAmount'''}]' 1 0 )
+      fi
+
+      # tx3 txid
+      if [[ "$connection" == "rpc" ]]; then
+        txid3=$(curl -sS --data-binary '{"jsonrpc": "1.0", "id":"jumble", "method": "z_getoperationstatus", "params": [["'$sendtx3'"]] }' -H 'content-type: text/plain;' http://"$rpcUser":"$rpcPassword"@"$rpcAddress":"$rpcPort"/ | jq -r '.result' | jq -r '.[]' | jq -r '.result' | jq -r '.txid')
+      elif [[ "$connection" == "cli" ]]; then
+        txid3=$($komodoCli $komodoCoin z_getoperationstatus '["'"$sendtx3"'"]' | jq -r '.[]' | jq -r '.result' | jq -r '.txid')
+      fi
+
+      echo ""
+      echo "Sending Jumble Payment 3 (p -> t)"
+      echo "opid: $sendtx3"
+      echo "txid: $txid3"
+      echo "$explorer/tx/$txid3"
+      echo ""
+      sleep 30
+
+      # uncomment when txid is figured out
+      # check for confirmations of txid3
+      #if [[ $connection == "rpc" ]]; then
+        #TODO
+      #elif [[ $connection == "cli" ]]; then
+        #tx3confirms=(gettransaction $txid3 | jq -r ".confirmations")
+      #fi
+      # will need to adapt until for >0 incase multiple confirmations happen during sleep
+      #until [ "$payment3confirms" = "1" ]; do
+          #sleep 60
+          #echo "   checking for confirmations..."
+          # check for confirmations of txid3
+          #if [[ "$connection" == "rpc" ]]; then
+            #TODO
+          #elif [[ "$connection" == "cli" ]]; then
+            #tx3confirms=(gettransaction $txid3 | jq -r ".confirmations")
+          #fi
+      #done
+      #echo ""
+      #echo "   Transaction confirmed."
+
+      # check balance of depositAddress before starting loop again
+      if [[ "$connection" == "rpc" ]]; then
+        depositBalance=$(printf "%.8f" $(curl -sS --data-binary '{"jsonrpc": "1.0", "id":"jumble", "method": "z_getbalance", "params": ["'"$depositAddress"'"] }' -H 'content-type: text/plain;' http://"$rpcUser":"$rpcPassword"@"$rpcAddress":"$rpcPort"/ | jq -r '.result'))
+      elif [[ "$connection" == "cli" ]]; then
+        depositBalance=$($komodoCli $komodoCoin z_getbalance $depositAddress)
+      fi
+      # run balance compare check again
+      depositBalanceCompare9=$(echo "$depositBalance>=$nine" | bc)
+
+      echo "..................................................."
+      echo ""
+  done
+
+sleep 60
+
+done

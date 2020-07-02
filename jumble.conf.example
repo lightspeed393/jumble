@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# First make a conf file by copying the example:
+# cp jumble.conf.example jumble.conf
+
+# Then edit your conf file with:
+# nano jumble.conf
+
+
+#Full path to komodo-cli
+komodoCli="/usr/local/bin/komodo-cli"
+# set coin
+komodoCoin="-ac_name=SPACE"
+
+# rpc options
+# leave blank if you want to connect with cli
+rpcAddress=
+rpcPort=
+rpcUser=
+rpcPassword=
+
+# coin explorer for tx's
+explorer="https://explorer.spaceworks.co"
