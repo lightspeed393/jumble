@@ -10,7 +10,7 @@
     echo ""
     echo "jumble.conf file is missing."
     echo ""
-    exit
+    exit 0
   fi
 
   # check if jumble should connect to komodo with cli or rpc
@@ -55,6 +55,33 @@
   echo "..................................................."
   echo ""
 
+  # what speed you'd like to jumble
+  echo "The jumble process can operate fast, medium, or slow."
+  echo "The slower the jumble, the more privacy achieved."
+  echo "Please note, the slow setting can take over 90 minutes to complete one cycle."
+  echo ""
+  echo "Would you like jumble to be fast, medium or slow?"
+  echo ""
+  read speed
+  echo ""
+  echo ""
+  if [ "$speed" == "slow" ]; then
+    speed="slow"
+    timeSeconds="1800"
+    timeMinutes="30"
+  elif [ "$speed" == "medium" ]; then
+    speed="medium"
+    timeSeconds="600"
+    timeMinutes="10"
+  elif [ "$speed" == "fast" ]; then
+    speed="fast"
+    timeSeconds="30"
+  else
+    echo "Only fast, medium, or slow is accepted."
+    echo ""
+    exit 0
+  fi
+
   # ask for address to send jumbled coins to
   echo "What address should we send your jumbled coins to?"
   echo ""
@@ -78,11 +105,11 @@
   elif [ "$addressCheck" == "no" ]; then
     echo "Stopping jumble."
     echo ""
-    exit
+    exit 0
   else
     echo "Only yes or no accepted."
     echo ""
-    exit
+    exit 0
   fi
 
   # explain jumble amounts
@@ -195,8 +222,20 @@ while true; do
       echo ""
       echo "   Transaction confirmed."
 
-      # quick sleep
-      sleep 3
+      # sleep for privacy depending on speed
+      if [[ "$speed" == "slow" ]]; then
+          echo ""
+          echo "Pausing jumble for $timeMinutes minutes."
+          sleep $timeSeconds
+      elif [[ "$speed" == "medium" ]]; then
+          echo ""
+          echo "Pausing jumble for $timeMinutes minutes."
+          sleep $timeSeconds
+      else
+          echo ""
+          echo "Pausing jumble for $timeSeconds seconds."
+          sleep $timeSeconds
+      fi
 
       # tx 2 -- p -> p
       # from privateAddress1 to privateAddress2
@@ -241,8 +280,20 @@ while true; do
       echo ""
       echo "   Transaction confirmed."
 
-      # quick sleep
-      sleep 3
+      # sleep for privacy depending on speed
+      if [[ "$speed" == "slow" ]]; then
+          echo ""
+          echo "Pausing jumble for $timeMinutes minutes."
+          sleep $timeSeconds
+      elif [[ "$speed" == "medium" ]]; then
+          echo ""
+          echo "Pausing jumble for $timeMinutes minutes."
+          sleep $timeSeconds
+      else
+          echo ""
+          echo "Pausing jumble for $timeSeconds seconds."
+          sleep $timeSeconds
+      fi
 
       # tx 3 -- p -> t
       # from privateAddress2 to receiveAddress
@@ -265,7 +316,6 @@ while true; do
       echo "txid: $txid3"
       echo "$explorer/tx/$txid3"
       echo ""
-      sleep 30
 
       # uncomment when txid is figured out
       # check for confirmations of txid3
@@ -287,6 +337,21 @@ while true; do
       #done
       #echo ""
       #echo "   Transaction confirmed."
+
+      # sleep for privacy depending on speed
+      if [[ "$speed" == "slow" ]]; then
+          echo ""
+          echo "Pausing jumble for $timeMinutes minutes."
+          sleep $timeSeconds
+      elif [[ "$speed" == "medium" ]]; then
+          echo ""
+          echo "Pausing jumble for $timeMinutes minutes."
+          sleep $timeSeconds
+      else
+          echo ""
+          echo "Pausing jumble for $timeSeconds seconds."
+          sleep $timeSeconds
+      fi
 
       # check balance of depositAddress before starting loop again
       if [[ "$connection" == "rpc" ]]; then
